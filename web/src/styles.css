@@ -3110,3 +3110,55 @@ button svg {
 body:has(dialog[open]) {
   overflow: hidden;
 }
+/* Secondary copy remains readable on white and pale surfaces. */
+:root {
+  --muted: #626f82;
+}
+.quiet,
+.eyebrow,
+.page-description,
+.field input::placeholder,
+.field textarea::placeholder,
+.summary-person p,
+.summary-placeholder,
+.summary-dates dt,
+.aside-note p,
+.aside-link,
+.autosave,
+.equipment-body > p,
+.total,
+.detail-grid dt,
+.review-items span,
+.agreement p,
+.stat-label,
+.filter-tabs > button,
+.request-table th,
+.request-table small,
+.date-cell > span,
+.list-footer,
+.empty p,
+.notification-item p,
+.notification-item time,
+.setting-block p,
+.catalog-note,
+.site-footer,
+.request-card-main span,
+.request-card-top small,
+.history-section li time {
+  color: #657186;
+}
+.steps li {
+  color: #727b8c;
+}
+.steps li.current {
+  color: var(--blue);
+}
+.filter-tabs > button.selected {
+  color: #293c5a;
+}
+.mobile-nav > button {
+  color: #68758a;
+}
+.mobile-nav > button.active {
+  color: var(--blue);
+}
