@@ -23,7 +23,8 @@ User requested refinement of the supplied Stitch designs, not a pixel-exact clon
 1. Compared source PC profile and browser-rendered implementation together in one visual review, including the form and summary region. User-requested refinements: compact the summary, reduce tinted panels, group name and ID on desktop, retain single-column mobile fields, unify Korean naming, replace the fictitious logged-in identity with an explicit demo mode switch.
 2. P2: initial secondary text scale was too small in the summary, equipment details, and mobile cards. Raised task text to 14–16px and most secondary information to 12–14px. Increased mobile quantity targets to 44px. Recaptured PC profile, mobile equipment, and notification views.
 3. P2: secondary copy remained too pale. Changed secondary copy to `#657186` and main muted text to `#626f82`, retaining blue active states. Recaptured final PC profile and compared it with the normalized source in the same tool response. No unresolved P0/P1/P2 visual issue found in the checked views.
-4. Corrected nested-dialog scroll locking using `body:has(dialog[open])`, avoiding stale body overflow after closing two dialogs.
+4. P2 in published catalog mobile smoke check: a tablet selector overrode the mobile single-column grid, producing letter-by-letter wrapping. Fixed the equally specific mobile `.equipment-grid:not(.selectable)` rule. Recheck evidence: `design/qa/live-mobile-catalog-final.png`.
+5. Corrected nested-dialog scroll locking using `body:has(dialog[open])`, avoiding stale body overflow after closing two dialogs.
 
 ## Required fidelity surfaces
 
