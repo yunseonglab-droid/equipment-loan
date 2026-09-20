@@ -29,6 +29,12 @@ jobs:
       - name: Test reservation rules
         working-directory: web
         run: npm test
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify Firebase access rules and concurrent approval
+        run: npx -y firebase-tools@latest emulators:exec --only firestore --project demo-equipment-loan "npm run test:rules --prefix web"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

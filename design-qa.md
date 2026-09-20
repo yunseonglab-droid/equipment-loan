@@ -67,3 +67,16 @@ Focused checks included form labels/values, selected grade, long equipment name,
 - [x] Reservation/state tests and browser interaction checks.
 - [x] PC/mobile viewport checks and final visual review.
 - [x] GitHub repository and Pages deployment.
+
+## 2026-09-20: Google 로그인·실시간 서버 연결
+
+- 운영 프로젝트: equipment-loan-yslab-2026, equipment DB, 서울. 실제 billingEnabled=false 조회.
+- Auth Google 제공자 활성화. 실제 authorizedDomains 조회에서 Pages 호스트가 빠진 것을 발견하여 등록 후 반환값으로 확인.
+- 보안 규칙 테스트에서 최초 신청의 존재 여부 조회가 차단되는 문제를 발견. 인증 사용자에게 없는 문서의 단일 조회만 허용하도록 수정. 다른 사용자의 존재하는 문서는 차단 유지.
+- Firebase 에뮬레이터에서 8개 테스트 그룹 통과: 비로그인 조회 차단, 학생별 격리, 관리자 실시간 구독, 중복 ID·신청 간격, 스키마/크기/종류/소유권/상태/시간/수량 변조 차단, 관리자 사칭 차단, 두 승인 중 하나만 성공, 반납 후 재승인, 본인 대기 신청 취소.
+- 실제 cloud.js 저장 함수를 테스트에 사용. 서비스용 계정/학생 데이터를 만들어 통과한 것처럼 표시하지 않음.
+- 테스트 브라우저에서 별도 에뮬레이터 계정으로 관리자 장비 등록(2개), 학생 3단계 신청, 접수 완료까지 확인.
+- PC 표 화면 및 390px 모바일 신청 화면 확인. 글자 깨짐/수평 넘침 없음. 장비 이미지 분류별 대표 이미지라는 문구 표시.
+- 운영 Google 계정의 최종 로그인과 실제 서로 다른 물리 기기의 OS 알림은 별도 확인 필요. 에뮬레이터는 Standard 모드이며 운영 Enterprise의 인덱스/권한 배포 성공은 별도로 확인함.
+- 재고 변경은 관리자만 가능. 서버 규칙은 학생 공격을 차단하며 관리자는 신뢰된 운영자임. 관리자 자격증명 탈취/의도적 직접 API 재고 수정까지 방어하는 신뢰하지 않는 관리자 모델은 아님.
+- 이 규칙은 초기 운영용 검증 기준이며 대규모 공개 전에 사용량·보존·학교 계정 제한·추가 보안 검토 필요.

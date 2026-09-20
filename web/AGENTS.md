@@ -12,5 +12,5 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - User selected the supplied Stitch PC and mobile web screens as the design base and asked for more polished visuals with working interactions.
 - This is a responsive website, not a separate mobile app. Keep Korean copy concise and legible.
 - No email integration for this iteration, per explicit user instruction.
-- Current release is a clearly labeled local-storage review demo. Do not represent role switching as auth or browser demo events as cross-device production push.
+- Current release uses Google Auth and Firestore. User authorized a dedicated Seoul project, admin yunseonglab@gmail.com, and free/open-web realtime notifications only. Do not link billing, send emails, enable paid functions, or claim closed-web push. Never seed production with fake inventory.
 - GitHub Pages is the initial delivery target. Preserve the Pages workflow and relative assets.

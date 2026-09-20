@@ -30,15 +30,9 @@ import {
 import {
   CATALOG,
   STATUSES,
-  STORE_KEY,
-  DRAFT_KEY,
   available,
   freshDraft,
   initialState,
-  demoState,
-  loadState,
-  createRequest,
-  transition,
   validateProfile,
   validateBooking,
   itemTitle,
@@ -47,7 +41,20 @@ import {
   statusLabel,
   isOverdue,
 } from "./domain.js";
-import { mutateStore } from "./repository.js";
+import {
+  observeAuth,
+  login,
+  logout,
+  emulatorMode,
+  loginEmulator,
+  isAdmin,
+  watchService,
+  submitRequest,
+  changeRequest,
+  markRead,
+  saveEquipment,
+  errorMessage,
+} from "./cloud.js";
 const base = import.meta.env.BASE_URL;
 const STEPS = ["신청자 정보", "기자재·일정", "신청 확인"];
 const NAV = [
@@ -61,16 +68,6 @@ function currentRoute() {
   )
     ? location.hash.slice(1)
     : "apply";
-}
-function readDraft() {
-  try {
-    const d = JSON.parse(localStorage.getItem(DRAFT_KEY));
-    return d && Array.isArray(d.items)
-      ? { ...freshDraft(), ...d }
-      : freshDraft();
-  } catch {
-    return freshDraft();
-  }
 }
 function Button({ children, variant = "primary", className = "", ...props }) {
   return (
@@ -204,12 +201,18 @@ function Modal({ children, onClose, label, wide = false }) {
   );
 }
 export function App() {
-  const [state, setState] = useState(loadState),
-    [draft, setDraft] = useState(readDraft),
+  const [state, setState] = useState(() => ({
+      ...initialState(),
+      reservations: [],
+      ready: false,
+    })),
+    [draft, setDraft] = useState(freshDraft),
     [route, setRoute] = useState(currentRoute),
-    [mode, setMode] = useState(
-      () => sessionStorage.getItem("loan-mode") || "student",
-    ),
+    [mode, setMode] = useState("student"),
+    [user, setUser] = useState(null),
+    [authReady, setAuthReady] = useState(false),
+    [connectionError, setConnectionError] = useState(""),
+    [equipmentEdit, setEquipmentEdit] = useState(null),
     [step, setStep] = useState(0),
     [errors, setErrors] = useState({}),
     [search, setSearch] = useState(""),
@@ -220,7 +223,6 @@ export function App() {
     [success, setSuccess] = useState(null),
     [busy, setBusy] = useState(false),
     [settings, setSettings] = useState(false),
-    [confirm, setConfirm] = useState(null),
     [permission, setPermission] = useState(() =>
       typeof Notification === "undefined"
         ? "unsupported"
@@ -252,31 +254,57 @@ export function App() {
     window.addEventListener("hashchange", handle);
     return () => window.removeEventListener("hashchange", handle);
   }, []);
+  useEffect(
+    () =>
+      observeAuth((account) => {
+        setUser(account);
+        setAuthReady(true);
+        setDraft(freshDraft());
+        setSelected(null);
+        setSuccess(null);
+        setStep(0);
+        setMode(isAdmin(account) ? "admin" : "student");
+        setState({ ...initialState(), reservations: [], ready: false });
+        seen.current = null;
+        if (account) go(isAdmin(account) ? "admin" : "apply");
+      }),
+    [],
+  );
   useEffect(() => {
-    const sync = (e) => {
-      if (e.key === STORE_KEY) setState(loadState());
-    };
-    window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
-  }, []);
-  useEffect(() => {
-    try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-    } catch {
-      notify(
-        "입력 내용을 저장할 수 없어요. 브라우저 저장 공간을 확인해 주세요.",
-        "error",
-      );
-    }
-  }, [draft]);
+    if (!user) return;
+    setConnectionError("");
+    return watchService(
+      user,
+      (data) => {
+        setState((old) => ({
+          ...data,
+          notificationEnabled: old.notificationEnabled,
+        }));
+        setConnectionError("");
+      },
+      (error) => {
+        setConnectionError(errorMessage(error));
+        setState((old) => ({ ...old, ready: false }));
+      },
+    );
+  }, [user]);
   useEffect(() => {
     if ("serviceWorker" in navigator)
       navigator.serviceWorker.register(`${base}sw.js`).catch(() => {});
     return () => clearTimeout(timer.current);
   }, []);
   useEffect(() => {
+    if (!state.ready) return;
+    if (seen.current === null) {
+      seen.current = new Set(state.notifications.map((n) => n.id));
+      return;
+    }
     for (const n of state.notifications) {
-      if (!seen.current.has(n.id) && n.audience === mode) {
+      if (
+        !seen.current.has(n.id) &&
+        n.audience === mode &&
+        (mode === "admin" || n.uid === user?.uid)
+      ) {
         notify(n.title);
         if (
           state.notificationEnabled &&
@@ -301,15 +329,12 @@ export function App() {
   async function mutate(action) {
     setBusy(true);
     try {
-      const result = await mutateStore(action);
-      if (result.state) setState(result.state);
+      const result = await action();
+
       if (result.error) notify(result.error, "error");
       return result;
-    } catch {
-      notify(
-        "저장하지 못했어요. 브라우저 저장 공간을 확인하고 다시 시도해 주세요.",
-        "error",
-      );
+    } catch (error) {
+      notify(errorMessage(error), "error");
       return { error: "저장 실패" };
     } finally {
       setBusy(false);
@@ -320,8 +345,8 @@ export function App() {
     setErrors((e) => ({ ...e, [name]: undefined }));
   }
   function switchMode(value) {
+    if (value === "admin" && !isAdmin(user)) return;
     setMode(value);
-    sessionStorage.setItem("loan-mode", value);
     setSelected(null);
     go(value === "admin" ? "admin" : "apply");
   }
@@ -329,7 +354,7 @@ export function App() {
     const err =
       step === 0
         ? validateProfile(draft)
-        : validateBooking(draft, state.requests);
+        : validateBooking(draft, state.reservations);
     setErrors(err);
     if (Object.keys(err).length) {
       notify("입력한 내용을 확인해 주세요.", "error");
@@ -366,7 +391,7 @@ export function App() {
               qty: Math.max(
                 1,
                 Math.min(
-                  available(id, d.start, d.end, state.requests),
+                  available(id, d.start, d.end, state.reservations),
                   i.qty + delta,
                 ),
               ),
@@ -376,7 +401,8 @@ export function App() {
     }));
   }
   async function submit() {
-    const result = await mutate((s) => createRequest(s, draft));
+    if (!state.ready || busy) return;
+    const result = await mutate(() => submitRequest(draft, state.reservations));
     if (result.errors) {
       setErrors(result.errors);
       setStep(Object.keys(validateProfile(draft)).length ? 0 : 1);
@@ -390,25 +416,20 @@ export function App() {
     }
   }
   async function change(id, status, reason) {
-    const result = await mutate((s) => transition(s, id, status, reason));
+    const result = await mutate(() => changeRequest(id, status, reason));
     if (result.request) {
       notify(`${STATUSES[status]} 처리했습니다.`);
       setSelected(null);
     }
     return result;
   }
-  async function readNotifications(id) {
-    await mutate((s) => ({
-      state: {
-        ...s,
-        notifications: s.notifications.map((n) =>
-          (id ? n.id === id : n.audience === mode) ? { ...n, read: true } : n,
-        ),
-      },
-    }));
+  async function readNotifications() {
+    await mutate(async () => {
+      await markRead();
+      return {};
+    });
   }
   function openNotification(n) {
-    readNotifications(n.id);
     setSelected(n.requestId);
   }
   async function enableNotifications() {
@@ -426,7 +447,7 @@ export function App() {
       const result = await Notification.requestPermission();
       setPermission(result);
       if (result === "granted") {
-        await mutate((s) => ({ state: { ...s, notificationEnabled: true } }));
+        setState((s) => ({ ...s, notificationEnabled: true }));
         notify("현재 브라우저의 알림을 켰어요.");
       } else notify("브라우저 설정에서 알림을 허용해 주세요.", "error");
     } catch {
@@ -479,7 +500,9 @@ export function App() {
         r.year,
         r.course,
         r.professor,
-        r.items.map((i) => `${equipment(i.id).name} ${i.qty}개`).join(" / "),
+        r.items
+          .map((i) => `${equipment(i.id)?.name || "기자재"} ${i.qty}개`)
+          .join(" / "),
         r.start,
         r.end,
         statusLabel(r),
@@ -498,11 +521,14 @@ export function App() {
     a.click();
     URL.revokeObjectURL(a.href);
   }
-  const notifications = state.notifications.filter((n) => n.audience === mode);
+  const notifications = state.notifications.filter(
+    (n) => n.audience === mode && (mode === "admin" || n.uid === user?.uid),
+  );
   const unread = notifications.filter((n) => !n.read).length;
   const selectedRequest = state.requests.find((r) => r.id === selected);
   const filteredRequests = state.requests.filter(
     (r) =>
+      (mode === "admin" || r.uid === user?.uid) &&
       (filter === "all" ||
         (filter === "overdue" ? isOverdue(r) : r.status === filter)) &&
       `${r.name} ${r.studentId} ${r.course} ${itemTitle(r.items)}`
@@ -557,13 +583,24 @@ export function App() {
             ))}
           </div>
         </div>
+        {filteredEquipment.length === 0 && (
+          <Empty
+            icon={Camera}
+            title="등록된 기자재가 없어요"
+            body={
+              isAdmin(user)
+                ? "기자재 메뉴에서 실제 보유 장비를 등록해 주세요."
+                : "담당자가 장비를 등록하면 대여를 신청할 수 있어요."
+            }
+          />
+        )}
         <div className={`equipment-grid ${selectable ? "selectable" : ""}`}>
           {filteredEquipment.map((e) => {
             const count = available(
               e.id,
               draft.start,
               draft.end,
-              state.requests,
+              state.reservations,
             );
             const picked = draft.items.find((i) => i.id === e.id);
             return (
@@ -592,6 +629,14 @@ export function App() {
                 <div className="equipment-body">
                   <h3>{e.name}</h3>
                   <p>{e.subtitle}</p>
+                  {!selectable && isAdmin(user) && (
+                    <button
+                      className="text-button"
+                      onClick={() => setEquipmentEdit({ ...e })}
+                    >
+                      장비·수량 수정
+                    </button>
+                  )}
                   <div className="equipment-bottom">
                     <span
                       className={`availability ${count === 0 ? "none" : ""}`}
@@ -690,10 +735,13 @@ export function App() {
           <div className="review-items">
             {r.items.map((i) => (
               <div key={i.id}>
-                <img src={`${base}equipment/${equipment(i.id).image}`} alt="" />
+                <img
+                  src={`${base}equipment/${equipment(i.id)?.image || "fx3.png"}`}
+                  alt=""
+                />
                 <div>
-                  <strong>{equipment(i.id).name}</strong>
-                  <span>{equipment(i.id).category}</span>
+                  <strong>{equipment(i.id)?.name || "기자재"}</strong>
+                  <span>{equipment(i.id)?.category || "기자재"}</span>
                 </div>
                 <b>{i.qty}개</b>
               </div>
@@ -735,6 +783,66 @@ export function App() {
       </div>
     );
   }
+  if (!authReady || !user)
+    return (
+      <main className="login-shell">
+        <section className="login-card">
+          <div className="brand-mark">
+            <Camera size={32} />
+          </div>
+          <p className="eyebrow">EQUIPMENT LOAN</p>
+          <h1>
+            촬영의 시작,
+            <br />
+            기자재 대여부터.
+          </h1>
+          <p>
+            Google 계정으로 로그인하고
+            <br />
+            대여 신청과 처리 현황을 확인하세요.
+          </p>
+          <Button
+            disabled={!authReady || busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await login();
+              } catch (e) {
+                notify(errorMessage(e), "error");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {!authReady ? "연결 중…" : busy ? "로그인 중…" : "Google로 로그인"}
+            <ArrowRight size={18} />
+          </Button>
+          <small>신청 정보는 본인과 담당자만 확인할 수 있어요.</small>
+          {emulatorMode && (
+            <div className="emulator-controls">
+              {["admin", "alice", "bob"].map((role) => (
+                <Button
+                  key={role}
+                  variant="secondary"
+                  onClick={() =>
+                    loginEmulator(role).catch((e) =>
+                      notify(errorMessage(e), "error"),
+                    )
+                  }
+                >
+                  테스트 {role}
+                </Button>
+              ))}
+            </div>
+          )}
+          {toast && (
+            <p role="alert" className="field-error">
+              {toast.message}
+            </p>
+          )}
+        </section>
+      </main>
+    );
   return (
     <>
       <a className="skip-link" href="#main">
@@ -789,27 +897,39 @@ export function App() {
               )}
             </button>
             <div className="header-divider" />
+            {isAdmin(user) && (
+              <button
+                className="mode-button"
+                onClick={() =>
+                  switchMode(mode === "student" ? "admin" : "student")
+                }
+              >
+                <span className={`mode-dot ${mode}`} />
+                <span>{mode === "admin" ? "담당자" : "내 신청"}</span>
+              </button>
+            )}
             <button
-              className="mode-button"
+              className="icon-button"
+              aria-label="로그아웃"
               onClick={() =>
-                switchMode(mode === "student" ? "admin" : "student")
+                logout().catch((e) => notify(errorMessage(e), "error"))
               }
             >
-              <span className={`mode-dot ${mode}`} />
-              <span>{mode === "admin" ? "담당자" : "학생"} 체험</span>
-              <SlidersHorizontal size={15} />
+              <SignOut size={22} />
             </button>
           </div>
         </div>
       </header>
-      <div className="demo-bar">
-        <div>
-          <span className="demo-label">PREVIEW</span>
-          <span>이 브라우저에만 저장되는 체험 버전입니다.</span>
-          <button onClick={() => setSettings(true)}>
-            체험 설정 <CaretRight size={13} />
-          </button>
+      {connectionError && (
+        <div className="service-error" role="alert">
+          {connectionError}{" "}
+          <button onClick={() => location.reload()}>다시 연결</button>
         </div>
+      )}
+      <div className="service-status">
+        <span className={state.ready ? "online" : ""} />
+        {state.ready ? "실시간 연결됨" : "서버 연결 중…"}
+        <button onClick={() => setSettings(true)}>알림 설정</button>
       </div>
       <main
         id="main"
@@ -979,7 +1099,7 @@ export function App() {
                     <div className="form-footer">
                       <span className="autosave">
                         <CheckCircle size={16} />
-                        입력 내용 자동 저장
+                        개인정보는 본인과 담당자만 확인
                       </span>
                       <Button type="submit">
                         다음: 기자재 선택 <ArrowRight size={18} />
@@ -1153,7 +1273,10 @@ export function App() {
                         <ArrowLeft size={17} />
                         이전
                       </Button>
-                      <Button disabled={!draft.agreed || busy} onClick={submit}>
+                      <Button
+                        disabled={!draft.agreed || busy || !state.ready}
+                        onClick={submit}
+                      >
                         {busy ? "신청 중…" : "대여 신청하기"}
                         <ArrowRight size={18} />
                       </Button>
@@ -1200,19 +1323,21 @@ export function App() {
             <div className="page-heading">
               <div>
                 <p className="eyebrow">
-                  {route === "admin" ? "담당자 워크스페이스" : "나의 대여 기록"}
+                  {route === "admin" && isAdmin(user)
+                    ? "담당자 워크스페이스"
+                    : "나의 대여 기록"}
                 </p>
                 <h1>
-                  {route === "admin" ? "신청 관리" : "내 신청"}
+                  {route === "admin" && isAdmin(user) ? "신청 관리" : "내 신청"}
                   <span className="heading-dot">.</span>
                 </h1>
                 <p className="page-description">
-                  {route === "admin"
+                  {route === "admin" && isAdmin(user)
                     ? "접수된 신청을 확인하고 대여와 반납을 관리하세요."
-                    : "이 브라우저에서 신청한 내역을 확인하세요."}
+                    : "내 계정으로 신청한 내역을 확인하세요."}
                 </p>
               </div>
-              {route === "admin" ? (
+              {route === "admin" && isAdmin(user) ? (
                 <Button
                   variant="secondary"
                   onClick={exportCsv}
@@ -1232,7 +1357,7 @@ export function App() {
                 </Button>
               )}
             </div>
-            {route === "admin" && (
+            {route === "admin" && isAdmin(user) && (
               <div className="stats">
                 {[
                   ["pending", "승인 대기", Clock],
@@ -1380,7 +1505,7 @@ export function App() {
                         </div>
                         <div className="request-card-main">
                           <img
-                            src={`${base}equipment/${equipment(r.items[0].id).image}`}
+                            src={`${base}equipment/${equipment(r.items[0].id)?.image || "fx3.png"}`}
                             alt=""
                           />
                           <div>
@@ -1396,7 +1521,8 @@ export function App() {
                     ))}
                   </div>
                   <div className="list-footer">
-                    신청 {filteredRequests.length}건
+                    신청 {filteredRequests.length}건 · 최근 100건
+                    {mode === "admin" ? " 및 진행 중 최대 300건" : ""}
                   </div>
                 </>
               ) : (
@@ -1472,11 +1598,32 @@ export function App() {
                 />
               </label>
             </div>
+            {isAdmin(user) && (
+              <div className="catalog-manage">
+                <Button
+                  onClick={() =>
+                    setEquipmentEdit({
+                      name: "",
+                      subtitle: "",
+                      category: "카메라",
+                      total: 0,
+                    })
+                  }
+                >
+                  <Plus size={18} />
+                  기자재 등록
+                </Button>
+                <p>
+                  실제 보유 장비와 수량을 등록해 주세요. 수량이 0이면 신청할 수
+                  없어요.
+                </p>
+              </div>
+            )}
             {equipmentCards(false)}
             <p className="catalog-note">
               <Info size={16} />
-              시안에 포함된 예시 기자재입니다. 실제 보유 목록은 운영 전 등록할
-              예정이에요.
+              승인 대기 중에는 수량이 예약되지 않아요. 담당자 승인 시 대여가
+              확정됩니다.
             </p>
           </>
         )}
@@ -1575,7 +1722,7 @@ export function App() {
       <footer className="site-footer">
         <span>기자재 대여·반출</span>
         <span>선택부터 반납까지, 한곳에서.</span>
-        <button onClick={() => setSettings(true)}>체험 설정</button>
+        <button onClick={() => setSettings(true)}>알림 설정</button>
       </footer>
       <nav className="mobile-nav" aria-label="모바일 주 메뉴">
         {[
@@ -1648,15 +1795,17 @@ export function App() {
             >
               내 신청 확인 <ArrowRight size={18} />
             </Button>
-            <button
-              className="text-button"
-              onClick={() => {
-                setSuccess(null);
-                switchMode("admin");
-              }}
-            >
-              담당자 화면에서 승인 체험하기 <ArrowSquareOut size={15} />
-            </button>
+            {isAdmin(user) && (
+              <button
+                className="text-button"
+                onClick={() => {
+                  setSuccess(null);
+                  switchMode("admin");
+                }}
+              >
+                담당자 신청 관리로 이동 <ArrowSquareOut size={15} />
+              </button>
+            )}
           </div>
         </Modal>
       )}
@@ -1664,17 +1813,17 @@ export function App() {
         <Detail
           request={selectedRequest}
           mode={mode}
-          busy={busy}
+          busy={busy || !state.ready}
           onClose={() => setSelected(null)}
           change={change}
           reviewContent={reviewContent}
         />
       )}
       {settings && (
-        <Modal label="체험 및 알림 설정" onClose={() => setSettings(false)}>
+        <Modal label="알림 설정" onClose={() => setSettings(false)}>
           <div className="settings-content">
             <p className="eyebrow">설정</p>
-            <h2>체험과 알림</h2>
+            <h2>알림 설정</h2>
             <div className="setting-block">
               <div className="section-title">
                 <Bell size={22} />
@@ -1698,9 +1847,7 @@ export function App() {
                   <Button
                     variant="secondary"
                     onClick={() =>
-                      mutate((s) => ({
-                        state: { ...s, notificationEnabled: false },
-                      }))
+                      setState((s) => ({ ...s, notificationEnabled: false }))
                     }
                   >
                     끄기
@@ -1723,77 +1870,87 @@ export function App() {
                 </button>
               )}
             </div>
-            <div className="setting-block">
-              <div className="section-title">
-                <SquaresFour size={22} />
-                <h3>체험 데이터</h3>
-              </div>
-              <p>
-                신청과 알림은 이 브라우저에만 저장돼요. 다른 기기로 전달되지
-                않으며, 학생·담당자 전환은 기능을 살펴보기 위한 체험 기능이에요.
-                실제 개인정보 대신 예시 정보를 사용해 주세요.
-              </p>
-              <div className="setting-buttons">
-                <Button
-                  variant="secondary"
-                  onClick={() => setConfirm("sample")}
-                >
-                  예시 신청 불러오기
-                </Button>
-                <Button
-                  variant="danger-ghost"
-                  onClick={() => setConfirm("reset")}
-                >
-                  <Trash size={17} />
-                  초기화
-                </Button>
-              </div>
-            </div>
             <Button className="full" onClick={() => setSettings(false)}>
               확인
             </Button>
           </div>
         </Modal>
       )}
-      {confirm && (
-        <Modal label="체험 데이터 변경 확인" onClose={() => setConfirm(null)}>
-          <div className="confirm-content">
-            <h2>
-              {confirm === "reset"
-                ? "체험 데이터를 지울까요?"
-                : "예시 신청을 불러올까요?"}
-            </h2>
-            <p>
-              현재 브라우저에 저장된 신청과 알림이{" "}
-              {confirm === "reset"
-                ? "삭제됩니다. 입력 중인 신청서도 초기화됩니다."
-                : "예시 데이터로 교체됩니다."}{" "}
-              이 작업은 되돌릴 수 없어요.
-            </p>
-            <div className="dialog-actions">
-              <Button variant="secondary" onClick={() => setConfirm(null)}>
-                취소
-              </Button>
-              <Button
-                onClick={async () => {
-                  const r = await mutate(() => ({
-                    state: confirm === "reset" ? initialState() : demoState(),
-                  }));
-                  if (!r.error) {
-                    if (confirm === "reset") {
-                      setDraft(freshDraft());
-                      setStep(0);
-                    }
-                    setConfirm(null);
-                    setSettings(false);
-                    notify("체험 데이터를 업데이트했어요.");
-                  }
-                }}
+      {equipmentEdit && (
+        <Modal label="기자재 등록·수정" onClose={() => setEquipmentEdit(null)}>
+          <form
+            className="settings-content"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const result = await mutate(async () => {
+                await saveEquipment(equipmentEdit);
+                return { saved: true };
+              });
+              if (result.saved) {
+                setEquipmentEdit(null);
+                notify("기자재를 저장했습니다.");
+              }
+            }}
+          >
+            <h2>기자재 {equipmentEdit.id ? "수정" : "등록"}</h2>
+            <p>장비 사진은 분류별 대표 이미지로 표시됩니다.</p>
+            <Field label="장비명" name="equipment-name">
+              <input
+                id="equipment-name"
+                required
+                maxLength={100}
+                value={equipmentEdit.name}
+                onChange={(e) =>
+                  setEquipmentEdit({ ...equipmentEdit, name: e.target.value })
+                }
+              />
+            </Field>
+            <Field label="구성·설명" name="equipment-subtitle" optional>
+              <input
+                id="equipment-subtitle"
+                maxLength={160}
+                value={equipmentEdit.subtitle}
+                onChange={(e) =>
+                  setEquipmentEdit({
+                    ...equipmentEdit,
+                    subtitle: e.target.value,
+                  })
+                }
+              />
+            </Field>
+            <Field label="분류" name="equipment-category">
+              <select
+                id="equipment-category"
+                value={equipmentEdit.category}
+                onChange={(e) =>
+                  setEquipmentEdit({
+                    ...equipmentEdit,
+                    category: e.target.value,
+                  })
+                }
               >
-                계속
-              </Button>
-            </div>
-          </div>
+                {["카메라", "렌즈", "조명", "오디오"].map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="보유 수량" name="equipment-total">
+              <input
+                id="equipment-total"
+                type="number"
+                min="0"
+                max="100"
+                required
+                value={equipmentEdit.total}
+                onChange={(e) =>
+                  setEquipmentEdit({ ...equipmentEdit, total: e.target.value })
+                }
+              />
+            </Field>
+            <Button disabled={busy || !state.ready} type="submit">
+              {busy ? "저장 중…" : "저장"}
+            </Button>
+          </form>
         </Modal>
       )}
     </>
@@ -1885,16 +2042,41 @@ function Detail({ request: r, mode, onClose, busy, change, reviewContent }) {
             </>
           )
         ) : mode === "admin" && r.status === "approved" ? (
-          <Button disabled={busy} onClick={() => change(r.id, "borrowed")}>
-            <Package size={18} />
-            기자재 인도 완료
-          </Button>
+          <>
+            {cancel ? (
+              <>
+                <Button variant="secondary" onClick={() => setCancel(false)}>
+                  돌아가기
+                </Button>
+                <Button
+                  variant="danger"
+                  disabled={busy}
+                  onClick={() => change(r.id, "cancelled")}
+                >
+                  승인 취소 확정
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="danger-ghost" onClick={() => setCancel(true)}>
+                  승인 취소
+                </Button>
+                <Button
+                  disabled={busy}
+                  onClick={() => change(r.id, "borrowed")}
+                >
+                  <Package size={18} />
+                  기자재 인도 완료
+                </Button>
+              </>
+            )}
+          </>
         ) : mode === "admin" && r.status === "borrowed" ? (
           <Button disabled={busy} onClick={() => change(r.id, "returned")}>
             <CheckCircle size={18} />
             반납 확인
           </Button>
-        ) : mode === "student" && ["pending", "approved"].includes(r.status) ? (
+        ) : mode === "student" && r.status === "pending" ? (
           cancel ? (
             <>
               <Button variant="secondary" onClick={() => setCancel(false)}>

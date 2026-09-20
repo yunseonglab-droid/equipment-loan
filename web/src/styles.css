@@ -3167,3 +3167,109 @@ body:has(dialog[open]) {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.login-shell {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse at 70% 20%, #e9efff, transparent 60%), #f7f8fb;
+}
+.login-card {
+  width: min(100%, 460px);
+  padding: 48px 36px;
+  background: #fff;
+  border: 1px solid #e7eaf0;
+  border-radius: 24px;
+  box-shadow: 0 16px 60px #182e5810;
+}
+.login-card .brand-mark {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 32px;
+}
+.login-card h1 {
+  font-size: 36px;
+  line-height: 1.5;
+  letter-spacing: -1.6px;
+  margin: 12px 0 20px;
+}
+.login-card p {
+  line-height: 1.8;
+  color: #677184;
+}
+.login-card .button {
+  width: 100%;
+  margin: 32px 0 16px;
+  min-height: 52px;
+}
+.login-card small {
+  font-size: 12px;
+  color: #7b8392;
+}
+.service-status {
+  max-width: 1200px;
+  margin: 14px auto 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 28px;
+  color: #718093;
+  font-size: 12px;
+}
+.service-status > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a9b1bc;
+}
+.service-status > span.online {
+  background: #158364;
+}
+.service-status button {
+  margin-left: auto;
+  color: #657187;
+  background: none;
+  border: 0;
+  padding: 10px;
+  cursor: pointer;
+}
+.service-error {
+  padding: 15px;
+  text-align: center;
+  background: #fff1ef;
+  color: #a93232;
+}
+.service-error button {
+  margin-left: 12px;
+  padding: 8px;
+}
+.catalog-manage {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 24px 0;
+}
+.catalog-manage p {
+  font-size: 13px;
+  color: #738094;
+}
+.settings-content .field {
+  margin: 18px 0;
+}
+@media (max-width: 600px) {
+  .login-card {
+    padding: 32px 24px;
+  }
+  .login-card h1 {
+    font-size: 30px;
+  }
+  .catalog-manage {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .service-status {
+    padding: 0 18px;
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Equipment Loan",
+        "supportEmail": "yunseonglab@gmail.com"
+      }
+    },
+    "authorizedDomains": [
+      "localhost",
+      "127.0.0.1",
+      "yunseonglab-droid.github.io",
+      "equipment-loan-yslab-2026.firebaseapp.com",
+      "equipment-loan-yslab-2026.web.app"
+    ]
+  },
+  "firestore": {
+    "database": "equipment",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "auth": {
+      "port": 9299
+    },
+    "firestore": {
+      "port": 8280
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
+  }
+}

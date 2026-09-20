@@ -1,4 +1,4 @@
-export const CATALOG = [
+export let CATALOG = [
   {
     id: "fx3",
     name: "Sony FX3",
@@ -98,8 +98,9 @@ export function isOverdue(r, now = Date.now()) {
 export function statusLabel(r) {
   return isOverdue(r) ? "연체" : STATUSES[r.status];
 }
-export function available(id, start, end, requests, excludeId) {
-  const item = equipment(id);
+export function available(id, start, end, requests, excludeId, totalOverride) {
+  const item =
+    totalOverride === undefined ? equipment(id) : { total: totalOverride };
   if (!item) return 0;
   const from = Date.parse(start),
     to = Date.parse(end);
@@ -134,6 +135,12 @@ export function validateProfile(d) {
   if (!d.year) e.year = "학년을 선택해 주세요.";
   if (!d.course.trim()) e.course = "수업명을 입력해 주세요.";
   if (!d.professor.trim()) e.professor = "담당 교수님 성함을 입력해 주세요.";
+  for (const [key, max] of Object.entries({
+    name: 60,
+    course: 120,
+    professor: 60,
+  }))
+    if (d[key]?.length > max) e[key] = `${max}자 이내로 입력해 주세요.`;
   return e;
 }
 export function validateBooking(d, requests, now = Date.now()) {
@@ -150,6 +157,14 @@ export function validateBooking(d, requests, now = Date.now()) {
         ? "반출 장소를 입력해 주세요."
         : "사용 장소를 입력해 주세요.";
   if (!d.purpose.trim()) e.purpose = "사용 목적을 입력해 주세요.";
+  if (d.items.length > 4) e.items = "한 번에 최대 4종까지 신청할 수 있어요.";
+  if (s > now + 90 * 86400000)
+    e.start = "대여 시작은 90일 이내로 선택해 주세요.";
+  if (t - s > 30 * 86400000) e.end = "대여 기간은 최대 30일입니다.";
+  if (d.location.length > 200)
+    e.location = "장소는 200자 이내로 입력해 주세요.";
+  if (d.purpose.length > 1000)
+    e.purpose = "사용 목적은 1,000자 이내로 입력해 주세요.";
   if (!d.items.length) e.items = "기자재를 한 종류 이상 선택해 주세요.";
   const ids = new Set();
   for (const i of d.items) {
@@ -331,4 +346,8 @@ export function loadState() {
 }
 export function saveState(state) {
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
+}
+
+export function setCatalog(items) {
+  CATALOG = items;
 }

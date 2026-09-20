@@ -1,0 +1,95 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // requests: private applicant fields, numeric schedule milliseconds, server timestamps.
+    // catalog: signed-in equipment list. system/schedule: anonymous booking quantities only.
+    // users: private read watermark and submission throttle. No client-editable roles.
+    function signedIn() { return request.auth != null && request.auth.token.email_verified == true && request.auth.token.firebase.sign_in_provider == 'google.com'; }
+    function admin() { return signedIn() && request.auth.token.email == 'yunseonglab@gmail.com'; }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    function text(s,max) { return s is string && s.size()>0 && s.size()<=max; }
+    function item(i) {
+      return i is map && i.keys().hasOnly(['id','qty']) && text(i.id,64) && i.id.matches('[a-zA-Z0-9_-]+') && i.qty is int && i.qty>0 && i.qty<=100
+        && i.qty<=get(/databases/$(database)/documents/catalog/$(i.id)).data.total;
+    }
+    function items(a) {
+      return a is list && a.size()>0 && a.size()<=4 && item(a[0])
+        && (a.size()<2 || (item(a[1]) && a[1].id!=a[0].id))
+        && (a.size()<3 || (item(a[2]) && a[2].id!=a[0].id && a[2].id!=a[1].id))
+        && (a.size()<4 || (item(a[3]) && a[3].id!=a[0].id && a[3].id!=a[1].id && a[3].id!=a[2].id));
+    }
+    function validRequest(d) {
+      return d.keys().hasAll(['uid','name','studentId','year','course','professor','start','end','use','location','purpose','items','agreed','status','reason','createdAt','updatedAt','history'])
+        && d.keys().hasOnly(['uid','name','studentId','year','course','professor','start','end','use','location','purpose','items','agreed','status','reason','createdAt','updatedAt','history'])
+        && text(d.uid,128) && text(d.name,60) && d.studentId is string && d.studentId.matches('[0-9]{6,12}')
+        && d.year in ['1','2','3','4','기타'] && text(d.course,120) && text(d.professor,60)
+        && d.start is int && d.end is int && d.end>d.start && d.end-d.start<=2592000000
+        && d.use in ['inside','outside'] && text(d.location,200) && text(d.purpose,1000)
+        && d.agreed==true && d.items is list && d.items.size()>0 && d.items.size()<=4
+        && d.status in ['pending','approved','borrowed','returned','rejected','cancelled']
+        && d.reason is string && d.reason.size()<=500 && (d.status!='rejected' || d.reason.size()>0)
+        && d.createdAt is timestamp && d.updatedAt==request.time
+        && d.history is map && d.history.keys().hasOnly(['pending','approved','borrowed','returned','rejected','cancelled']) && d.history.size()<=6;
+    }
+    function allowedTransition(a,b) {
+      return (a=='pending' && b in ['approved','rejected','cancelled']) || (a=='approved' && b in ['borrowed','cancelled']) || (a=='borrowed' && b=='returned');
+    }
+    match /requests/{id} {
+      allow get: if signedIn() && (!exists(/databases/$(database)/documents/requests/$(id)) || owner(resource.data.uid) || admin());
+      allow list: if owner(resource.data.uid) || admin();
+      allow create: if owner(request.resource.data.uid) && id.matches('[a-zA-Z0-9_-]{1,64}')
+        && validRequest(request.resource.data) && items(request.resource.data.items)
+        && request.resource.data.start >= request.time.toMillis() && request.resource.data.start <= request.time.toMillis()+7776000000
+        && request.resource.data.status=='pending' && request.resource.data.reason==''
+        && request.resource.data.createdAt==request.time && request.resource.data.history=={'pending':request.time}
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.lastSubmit==request.time
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.lastRequestId==id;
+      allow update: if signedIn() && validRequest(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reason','updatedAt','history'])
+        && allowedTransition(resource.data.status,request.resource.data.status)
+        && request.resource.data.history.diff(resource.data.history).affectedKeys().hasOnly([request.resource.data.status])
+        && request.resource.data.history[request.resource.data.status]==request.time
+        && (admin() || (owner(resource.data.uid) && resource.data.status=='pending' && request.resource.data.status=='cancelled' && request.resource.data.reason==''));
+      allow delete: if false;
+    }
+    function validCatalog(d) {
+      return d.keys().hasAll(['name','subtitle','category','total','image']) && d.keys().hasOnly(['name','subtitle','category','total','image'])
+        && text(d.name,100) && d.subtitle is string && d.subtitle.size()<=160 && d.category in ['카메라','렌즈','조명','오디오']
+        && d.total is int && d.total>=0 && d.total<=100 && d.image in ['fx3.png','lens.png','light.png','mic.png'];
+    }
+    match /catalog/{id} {
+      allow read: if signedIn();
+      allow create,update: if admin() && id.matches('[a-zA-Z0-9_-]{1,64}') && validCatalog(request.resource.data);
+      allow delete: if false;
+    }
+    match /system/schedule {
+      allow read: if signedIn();
+      // Only the trusted administrator writes this bounded, PII-free serialized schedule.
+      allow create,update: if admin() && request.resource.data.keys().hasOnly(['bookings','updatedAt'])
+        && request.resource.data.bookings is string && request.resource.data.bookings.size()<=150000 && request.resource.data.updatedAt==request.time;
+      allow delete: if false;
+    }
+    function validUser(d) {
+      return d.keys().hasOnly(['readThrough','lastSubmit','lastRequestId'])
+        && (!('readThrough' in d) || d.readThrough is timestamp)
+        && (!('lastSubmit' in d) || d.lastSubmit is timestamp)
+        && (!('lastRequestId' in d) || (d.lastRequestId is string && d.lastRequestId.matches('[a-zA-Z0-9_-]{1,64}')));
+    }
+    function validSubmit(d) {
+      return d.lastSubmit==request.time
+        && getAfter(/databases/$(database)/documents/requests/$(d.lastRequestId)).data.uid==request.auth.uid
+        && getAfter(/databases/$(database)/documents/requests/$(d.lastRequestId)).data.createdAt==request.time;
+    }
+    match /users/{uid} {
+      allow read: if owner(uid);
+      allow create: if owner(uid) && validUser(request.resource.data)
+        && (!('readThrough' in request.resource.data) || request.resource.data.readThrough==request.time)
+        && (!('lastSubmit' in request.resource.data) || validSubmit(request.resource.data));
+      allow update: if owner(uid) && validUser(request.resource.data)
+        && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readThrough']) && request.resource.data.readThrough==request.time
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSubmit','lastRequestId']) && validSubmit(request.resource.data)
+            && (!('lastSubmit' in resource.data) || request.time>=resource.data.lastSubmit+duration.value(15,'s')));
+      allow delete: if false;
+    }
+  }
+}

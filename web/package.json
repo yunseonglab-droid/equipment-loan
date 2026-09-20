@@ -8,17 +8,20 @@
     "build": "vite build && node scripts/prepare-sites-build.mjs",
     "preview": "vite preview",
     "test:sites": "node --test tests/sites-worker.test.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "test:rules": "node --test tests/integration/firestore.test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-kr": "^5.3.0",
     "@phosphor-icons/react": "^2.1.10",
     "@vitejs/plugin-react": "5.0.4",
+    "firebase": "^12.19.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "vite": "6.4.2"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "prettier": "^3.9.8"
   }
 }
