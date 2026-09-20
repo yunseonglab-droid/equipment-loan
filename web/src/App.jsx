@@ -587,7 +587,7 @@ export function App() {
             ))}
           </div>
         </div>
-        {filteredEquipment.length === 0 && (
+        {CATALOG.length === 0 && (
           <Empty
             icon={Camera}
             title="등록된 기자재가 없어요"
@@ -682,7 +682,7 @@ export function App() {
             );
           })}
         </div>
-        {filteredEquipment.length === 0 && (
+        {CATALOG.length > 0 && filteredEquipment.length === 0 && (
           <Empty
             icon={MagnifyingGlass}
             title="검색 결과가 없어요"
