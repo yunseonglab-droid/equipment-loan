@@ -55,9 +55,6 @@ export function freshDraft() {
   return {
     studentId: "",
     name: "",
-    year: "",
-    course: "",
-    professor: "",
     start: dateInput(1),
     end: dateInput(3, 17),
     use: "inside",
@@ -132,15 +129,7 @@ export function validateProfile(d) {
   if (!/^\d{6,12}$/.test(d.studentId.trim()))
     e.studentId = "학번을 숫자 6~12자리로 입력해 주세요.";
   if (!d.name.trim()) e.name = "이름을 입력해 주세요.";
-  if (!d.year) e.year = "학년을 선택해 주세요.";
-  if (!d.course.trim()) e.course = "수업명을 입력해 주세요.";
-  if (!d.professor.trim()) e.professor = "담당 교수님 성함을 입력해 주세요.";
-  for (const [key, max] of Object.entries({
-    name: 60,
-    course: 120,
-    professor: 60,
-  }))
-    if (d[key]?.length > max) e[key] = `${max}자 이내로 입력해 주세요.`;
+  if (d.name.length > 60) e.name = "이름은 60자 이내로 입력해 주세요.";
   return e;
 }
 export function validateBooking(d, requests, now = Date.now()) {

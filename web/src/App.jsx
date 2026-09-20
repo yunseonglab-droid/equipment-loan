@@ -43,6 +43,7 @@ import {
 } from "./domain.js";
 import {
   observeAuth,
+  enterStudent,
   login,
   logout,
   emulatorMode,
@@ -231,6 +232,7 @@ export function App() {
     [unreadOnly, setUnreadOnly] = useState(false);
   const seen = useRef(new Set(state.notifications.map((n) => n.id)));
   const timer = useRef();
+  const entryProfile = useRef(null);
   function notify(message, type = "success") {
     clearTimeout(timer.current);
     setToast({ message, type });
@@ -259,10 +261,12 @@ export function App() {
       observeAuth((account) => {
         setUser(account);
         setAuthReady(true);
-        setDraft(freshDraft());
+        const profile = entryProfile.current;
+        entryProfile.current = null;
+        setDraft({ ...freshDraft(), ...(profile || {}) });
         setSelected(null);
         setSuccess(null);
-        setStep(0);
+        setStep(profile ? 1 : 0);
         setMode(isAdmin(account) ? "admin" : "student");
         setState({ ...initialState(), reservations: [], ready: false });
         seen.current = null;
@@ -707,18 +711,24 @@ export function App() {
                 {r.name} · {r.studentId}
               </dd>
             </div>
-            <div>
-              <dt>학년</dt>
-              <dd>{r.year === "기타" ? "기타" : r.year + "학년"}</dd>
-            </div>
-            <div>
-              <dt>수업명</dt>
-              <dd>{r.course}</dd>
-            </div>
-            <div>
-              <dt>담당 교수님</dt>
-              <dd>{r.professor}</dd>
-            </div>
+            {r.year && (
+              <div>
+                <dt>학년</dt>
+                <dd>{r.year === "기타" ? "기타" : r.year + "학년"}</dd>
+              </div>
+            )}
+            {r.course && (
+              <div>
+                <dt>수업명</dt>
+                <dd>{r.course}</dd>
+              </div>
+            )}
+            {r.professor && (
+              <div>
+                <dt>담당 교수님</dt>
+                <dd>{r.professor}</dd>
+              </div>
+            )}
           </dl>
         </section>
         <section>
@@ -796,28 +806,82 @@ export function App() {
             <br />
             기자재 대여부터.
           </h1>
-          <p>
-            Google 계정으로 로그인하고
-            <br />
-            대여 신청과 처리 현황을 확인하세요.
-          </p>
-          <Button
-            disabled={!authReady || busy}
-            onClick={async () => {
+          <p>학생은 학번과 이름만 입력하면 돼요.</p>
+          <form
+            className="student-entry"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const err = validateProfile(draft);
+              setErrors(err);
+              if (Object.keys(err).length) return;
+              entryProfile.current = {
+                studentId: draft.studentId.trim(),
+                name: draft.name.trim(),
+              };
               setBusy(true);
               try {
-                await login();
-              } catch (e) {
-                notify(errorMessage(e), "error");
+                await enterStudent();
+              } catch (error) {
+                entryProfile.current = null;
+                notify(errorMessage(error), "error");
               } finally {
                 setBusy(false);
               }
             }}
           >
-            {!authReady ? "연결 중…" : busy ? "로그인 중…" : "Google로 로그인"}
-            <ArrowRight size={18} />
-          </Button>
-          <small>신청 정보는 본인과 담당자만 확인할 수 있어요.</small>
+            <Field
+              label="학번"
+              name="entry-student-id"
+              error={errors.studentId}
+            >
+              <input
+                id="entry-student-id"
+                inputMode="numeric"
+                maxLength={12}
+                autoComplete="off"
+                value={draft.studentId}
+                placeholder="학번을 입력해 주세요"
+                onChange={(e) =>
+                  update("studentId", e.target.value.replace(/\D/g, ""))
+                }
+              />
+            </Field>
+            <Field label="이름" name="entry-name" error={errors.name}>
+              <input
+                id="entry-name"
+                maxLength={60}
+                autoComplete="name"
+                value={draft.name}
+                placeholder="이름을 입력해 주세요"
+                onChange={(e) => update("name", e.target.value)}
+              />
+            </Field>
+            <Button type="submit" disabled={!authReady || busy}>
+              {!authReady ? "연결 중…" : busy ? "준비 중…" : "대여 신청하기"}
+              <ArrowRight size={18} />
+            </Button>
+          </form>
+          <small>
+            신청 내역은 이 브라우저에서 확인할 수 있어요.
+            <br />
+            다른 기기나 사용 종료 후에는 담당자에게 문의해 주세요.
+          </small>
+          <button
+            className="admin-login-link"
+            disabled={!authReady || busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await login();
+              } catch (error) {
+                notify(errorMessage(error), "error");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            담당자 Google 로그인
+          </button>
           {emulatorMode && (
             <div className="emulator-controls">
               {["admin", "alice", "bob"].map((role) => (
@@ -908,9 +972,19 @@ export function App() {
                 <span>{mode === "admin" ? "담당자" : "내 신청"}</span>
               </button>
             )}
+            {!isAdmin(user) && (
+              <button
+                className="admin-header-login"
+                onClick={() =>
+                  login().catch((e) => notify(errorMessage(e), "error"))
+                }
+              >
+                담당자
+              </button>
+            )}
             <button
               className="icon-button"
-              aria-label="로그아웃"
+              aria-label={user.isAnonymous ? "사용 종료" : "로그아웃"}
               onClick={() =>
                 logout().catch((e) => notify(errorMessage(e), "error"))
               }
@@ -1028,78 +1102,11 @@ export function App() {
                           }
                         />
                       </Field>
-                      <div
-                        className={`field span-two ${errors.year ? "invalid" : ""}`}
-                      >
-                        <span className="field-label" id="year-label">
-                          학년 <span className="required">*</span>
-                        </span>
-                        <div
-                          className="segment years"
-                          role="group"
-                          aria-labelledby="year-label"
-                        >
-                          {["1", "2", "3", "4", "기타"].map((y) => (
-                            <button
-                              key={y}
-                              type="button"
-                              className={draft.year === y ? "selected" : ""}
-                              onClick={() => update("year", y)}
-                              aria-pressed={draft.year === y}
-                            >
-                              {y === "기타" ? y : `${y}학년`}
-                            </button>
-                          ))}
-                        </div>
-                        {errors.year && (
-                          <p className="field-error">{errors.year}</p>
-                        )}
-                      </div>
-                      <div className="span-two">
-                        <Field
-                          label="수업명"
-                          name="course"
-                          error={errors.course}
-                        >
-                          <input
-                            id="course"
-                            placeholder="예: 영상제작실습"
-                            maxLength={80}
-                            value={draft.course}
-                            onChange={(e) => update("course", e.target.value)}
-                            aria-invalid={!!errors.course}
-                            aria-describedby={
-                              errors.course ? "course-error" : undefined
-                            }
-                          />
-                        </Field>
-                      </div>
-                      <div className="span-two">
-                        <Field
-                          label="담당 교수님 성함"
-                          name="professor"
-                          error={errors.professor}
-                        >
-                          <input
-                            id="professor"
-                            placeholder="교수님 성함을 입력해 주세요"
-                            maxLength={40}
-                            value={draft.professor}
-                            onChange={(e) =>
-                              update("professor", e.target.value)
-                            }
-                            aria-invalid={!!errors.professor}
-                            aria-describedby={
-                              errors.professor ? "professor-error" : undefined
-                            }
-                          />
-                        </Field>
-                      </div>
                     </div>
                     <div className="form-footer">
                       <span className="autosave">
                         <CheckCircle size={16} />
-                        개인정보는 본인과 담당자만 확인
+                        신청 내역은 이 브라우저에서 확인
                       </span>
                       <Button type="submit">
                         다음: 기자재 선택 <ArrowRight size={18} />
@@ -1334,7 +1341,7 @@ export function App() {
                 <p className="page-description">
                   {route === "admin" && isAdmin(user)
                     ? "접수된 신청을 확인하고 대여와 반납을 관리하세요."
-                    : "내 계정으로 신청한 내역을 확인하세요."}
+                    : "이 브라우저에서 신청한 내역을 확인하세요."}
                 </p>
               </div>
               {route === "admin" && isAdmin(user) ? (
@@ -1455,9 +1462,11 @@ export function App() {
                                   <strong>{r.name}</strong>
                                   <small>
                                     {r.studentId} ·{" "}
-                                    {r.year === "기타"
-                                      ? "기타"
-                                      : r.year + "학년"}
+                                    {r.year
+                                      ? r.year === "기타"
+                                        ? "기타"
+                                        : r.year + "학년"
+                                      : "직접 입력"}
                                   </small>
                                 </div>
                               </div>

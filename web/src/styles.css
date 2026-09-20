@@ -3273,3 +3273,33 @@ body:has(dialog[open]) {
     padding: 0 18px;
   }
 }
+.student-entry .field {
+  margin-top: 18px;
+}
+.student-entry .button {
+  margin-top: 24px;
+}
+.admin-login-link {
+  display: block;
+  margin: 26px auto 0;
+  padding: 10px;
+  border: 0;
+  background: none;
+  color: #5f6d82;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.admin-header-login {
+  border: 0;
+  background: none;
+  color: #6b7788;
+  font-size: 12px;
+  padding: 10px;
+  cursor: pointer;
+}
+.login-card small {
+  display: block;
+  line-height: 1.8;
+}

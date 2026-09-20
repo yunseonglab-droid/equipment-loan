@@ -33,7 +33,7 @@ const draft = (changes = {}) => ({
   ...changes,
 });
 test("required profile validation catches missing values and invalid student IDs", () => {
-  assert.equal(Object.keys(validateProfile(freshDraft())).length, 5);
+  assert.equal(Object.keys(validateProfile(freshDraft())).length, 2);
   assert.ok(validateProfile(draft({ studentId: "abc123" })).studentId);
   assert.deepEqual(validateProfile(draft()), {});
 });

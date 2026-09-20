@@ -14,3 +14,5 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - No email integration for this iteration, per explicit user instruction.
 - Current release uses Google Auth and Firestore. User authorized a dedicated Seoul project, admin yunseonglab@gmail.com, and free/open-web realtime notifications only. Do not link billing, send emails, enable paid functions, or claim closed-web push. Never seed production with fake inventory.
 - GitHub Pages is the initial delivery target. Preserve the Pages workflow and relative assets.
+
+- Students now enter only student ID and name without Google sign-in. Dates, equipment and use details remain. Ownership uses anonymous Firebase UID, never name/ID lookup. Google login remains for the administrator.

@@ -3,6 +3,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInAnonymously,
   signInWithCredential,
   signOut,
   onAuthStateChanged,
@@ -52,6 +53,7 @@ export const login = () => {
   provider.setCustomParameters({ prompt: "select_account" });
   return signInWithPopup(auth, provider);
 };
+export const enterStudent = () => signInAnonymously(auth);
 export const logout = () => signOut(auth);
 const lockRef = (database = db) => doc(database, "system", "schedule");
 function iso(value) {
@@ -231,9 +233,6 @@ export async function submitRequest(
       uid: user.uid,
       name: draft.name.trim(),
       studentId: draft.studentId.trim(),
-      year: draft.year,
-      course: draft.course.trim(),
-      professor: draft.professor.trim(),
       start: Date.parse(draft.start),
       end: Date.parse(draft.end),
       use: draft.use,

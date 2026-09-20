@@ -4,7 +4,8 @@
       "googleSignIn": {
         "oAuthBrandDisplayName": "Equipment Loan",
         "supportEmail": "yunseonglab@gmail.com"
-      }
+      },
+      "anonymous": true
     },
     "authorizedDomains": [
       "localhost",

@@ -301,3 +301,67 @@ test("own pending cancellation is allowed; other student cancellation and approv
     }),
   );
 });
+
+test("students submit with only name and ID through anonymous identity; same ID never grants access", async () => {
+  const firstUser = { uid: "anon-first", isAnonymous: true };
+  const secondUser = { uid: "anon-second", isAnonymous: true };
+  const anonymousClaims = { firebase: { sign_in_provider: "anonymous" } };
+  const first = env
+    .authenticatedContext(firstUser.uid, anonymousClaims)
+    .firestore();
+  const second = env
+    .authenticatedContext(secondUser.uid, anonymousClaims)
+    .firestore();
+  const simple = draft();
+  delete simple.year;
+  delete simple.course;
+  delete simple.professor;
+  const result = await submitRequest(
+    simple,
+    [],
+    "anonymous-request",
+    context(first, firstUser),
+  );
+  assert.ok(result.request);
+  const saved = (
+    await getDoc(doc(first, "requests", "anonymous-request"))
+  ).data();
+  assert.equal(saved.studentId, simple.studentId);
+  for (const field of ["year", "course", "professor"])
+    assert.equal(field in saved, false);
+  await assertFails(getDoc(doc(second, "requests", "anonymous-request")));
+  await assertFails(
+    getDocs(
+      query(
+        collection(second, "requests"),
+        where("studentId", "==", simple.studentId),
+      ),
+    ),
+  );
+  await assertFails(
+    updateDoc(doc(first, "requests", "anonymous-request"), {
+      status: "approved",
+      updatedAt: serverTimestamp(),
+      "history.approved": serverTimestamp(),
+    }),
+  );
+  await assertFails(
+    setDoc(doc(first, "catalog", "anon-edit"), {
+      name: "fake",
+      subtitle: "",
+      category: "카메라",
+      image: "fx3.png",
+      total: 100,
+    }),
+  );
+  await changeRequest(
+    "anonymous-request",
+    "rejected",
+    "장비 점검 중",
+    context(admin, ad),
+  );
+  assert.equal(
+    (await getDoc(doc(first, "requests", "anonymous-request"))).data().status,
+    "rejected",
+  );
+});
